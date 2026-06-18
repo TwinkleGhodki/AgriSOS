@@ -25,7 +25,7 @@ Opens at: http://localhost:8501
 
 ---
 
-## SMS Alerts Setup (Optional — takes 5 min)
+## SMS Alerts Setup 
 
 1. Sign up free at https://twilio.com
 2. Get your Account SID, Auth Token, and phone number
