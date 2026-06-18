@@ -1,5 +1,17 @@
 # AgriSOS — Early Farmer Distress Prediction System
 
+## Overview
+
+AgriSOS is an AI-powered Early Farmer Distress Prediction System that uses weather data, market trends, and machine learning to identify farmers at risk and provide proactive recommendations. The system also supports SMS alerts, district-level monitoring dashboards and multilingual recommendations.
+
+Tech Stack:
+- Python
+- Streamlit
+- Scikit-Learn
+- Pandas
+- Open-Meteo API
+- Twilio
+
 ## Quick Start (Run in this exact order)
 
 ### 1. Install dependencies
@@ -51,6 +63,17 @@ AgriSOS/
 ├── farmer_data.csv     → Generated training data (600 records)
 ├── model.pkl           → Saved trained model
 ```
+
+---
+
+
+## Highlights
+
+- Developed an ML-based farmer distress prediction system using Random Forest.
+- Integrated real-time weather and market data.
+- Implemented SMS notifications using Twilio.
+- Built an interactive Streamlit dashboard with multiple analytics views.
+- Supports multilingual recommendations.
 
 ---
 
