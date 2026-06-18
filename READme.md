@@ -50,7 +50,6 @@ AgriSOS/
 ├── train_model.py      → Trains and saves Random Forest model
 ├── farmer_data.csv     → Generated training data (600 records)
 ├── model.pkl           → Saved trained model
-└── .env                → API credentials (never commit this)
 ```
 
 ---
