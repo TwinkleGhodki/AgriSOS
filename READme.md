@@ -37,6 +37,19 @@ Opens at: http://localhost:8501
 
 ---
 
+## Running Tests
+
+Install the project dependencies, then run:
+```bash
+pytest
+```
+
+The unit tests live in `tests/` and cover validation rules, ML prediction helpers,
+weather service fallback behavior, and Twilio alert handling. External services are
+mocked, so the tests do not require network access or real Twilio credentials.
+
+---
+
 ## SMS Alerts Setup 
 
 1. Sign up free at https://twilio.com
