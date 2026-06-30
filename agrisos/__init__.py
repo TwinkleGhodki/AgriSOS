@@ -1,0 +1,1 @@
+"""AgriSOS application package."""
