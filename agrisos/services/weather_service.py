@@ -1,11 +1,14 @@
 import requests
 
+from agrisos.config.logging_config import get_logger
 from agrisos.config.settings import (
     OPEN_METEO_URL,
     WEATHER_TIMEOUT_SECONDS,
     WEATHER_TIMEZONE,
 )
 from agrisos.data.district_repository import get_district_coordinates
+
+logger = get_logger(__name__)
 
 
 def get_weather_risk(district):
@@ -19,6 +22,7 @@ def get_weather_risk(district):
     )
     try:
         resp = requests.get(url, timeout=WEATHER_TIMEOUT_SECONDS)
+        resp.raise_for_status()
         data = resp.json()
         daily = data["daily"]
 
@@ -47,12 +51,30 @@ def get_weather_risk(district):
             "forecast_summary": forecast_summary,
             "source": "Open-Meteo (Live)",
         }
-    except Exception:
-        return {
-            "rainfall_deviation": -22.0,
-            "temperature_stress": 3.5,
-            "avg_rain_mm": 3.9,
-            "avg_temp_c": 35.5,
-            "forecast_summary": "Data unavailable (using fallback)",
-            "source": "Fallback",
-        }
+    except requests.Timeout:
+        logger.warning("Weather API timed out for district=%s", district)
+        return _fallback_weather()
+    except requests.HTTPError as exc:
+        logger.warning(
+            "Weather API returned HTTP error for district=%s status=%s",
+            district,
+            exc.response.status_code if exc.response is not None else "unknown",
+        )
+        return _fallback_weather()
+    except requests.RequestException as exc:
+        logger.warning("Weather API request failed for district=%s error=%s", district, exc)
+        return _fallback_weather()
+    except (KeyError, TypeError, ValueError) as exc:
+        logger.warning("Weather API response could not be parsed for district=%s error=%s", district, exc)
+        return _fallback_weather()
+
+
+def _fallback_weather():
+    return {
+        "rainfall_deviation": -22.0,
+        "temperature_stress": 3.5,
+        "avg_rain_mm": 3.9,
+        "avg_temp_c": 35.5,
+        "forecast_summary": "Data unavailable (using fallback)",
+        "source": "Fallback",
+    }

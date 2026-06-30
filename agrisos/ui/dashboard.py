@@ -1,8 +1,11 @@
+from html import escape
+
 import plotly.express as px
 import plotly.figure_factory as ff
 import plotly.graph_objects as go
 import streamlit as st
 
+from agrisos.config.logging_config import get_logger
 from agrisos.data.district_repository import get_district_risk_data
 from agrisos.data.market_repository import get_dashboard_market_prices
 from agrisos.data.recommendations import RECOMMENDATIONS
@@ -11,7 +14,23 @@ from agrisos.ml.predictor import predict_distress
 from agrisos.services.alerts_service import send_sms_alert
 from agrisos.services.weather_service import get_weather_risk
 from agrisos.utils.translation import translate_recommendations
-from agrisos.utils.validation import has_entered_phone_number
+from agrisos.utils.validation import (
+    ALLOWED_CROP_STAGES,
+    ALLOWED_CROPS,
+    ALLOWED_DISTRICTS,
+    ALLOWED_LANGUAGES,
+    ALLOWED_SOIL_TYPES,
+    EXPENDITURE_RATIO_RANGE,
+    PHONE_PLACEHOLDER,
+    PRICE_CHANGE_RANGE,
+    SOIL_MOISTURE_RANGE,
+    validate_farmer_assessment_inputs,
+    validate_market_crop,
+    validate_prediction_inputs,
+    validate_sms_inputs,
+)
+
+logger = get_logger(__name__)
 
 
 def render_app(model):
@@ -67,17 +86,12 @@ def render_farmer_assessment_tab(model):
     col1, col2 = st.columns(2)
     with col1:
         farmer_name = st.text_input("Farmer Name", "Ravi Kumar")
-        crop = st.selectbox("Crop", ["Paddy", "Wheat", "Cotton", "Sugarcane", "Maize"])
-        district = st.selectbox(
-            "District", ["Thanjavur", "Nagpur", "Ludhiana", "Warangal", "Nashik"]
-        )
-        language = st.selectbox(
-            "Advisory Language / மொழி",
-            ["English", "Tamil (தமிழ்)", "Hindi (हिंदी)"],
-        )
+        crop = st.selectbox("Crop", ALLOWED_CROPS)
+        district = st.selectbox("District", ALLOWED_DISTRICTS)
+        language = st.selectbox("Advisory Language / மொழி", ALLOWED_LANGUAGES)
         crop_stage = st.selectbox(
             "Crop Growth Stage",
-            [1, 2, 3, 4],
+            ALLOWED_CROP_STAGES,
             format_func=lambda x: {
                 1: "Sowing",
                 2: "Vegetative",
@@ -86,47 +100,99 @@ def render_farmer_assessment_tab(model):
             }[x],
         )
     with col2:
-        st.selectbox(
-            "Soil Type", ["Black Cotton", "Red Loamy", "Alluvial", "Sandy Loam", "Clay"]
-        )
+        soil_type = st.selectbox("Soil Type", ALLOWED_SOIL_TYPES)
         soil_moisture = st.slider(
-            "Soil Moisture Level", 1, 10, 5, help="1=Very Dry, 10=Optimal"
+            "Soil Moisture Level",
+            SOIL_MOISTURE_RANGE[0],
+            SOIL_MOISTURE_RANGE[1],
+            5,
+            help="1=Very Dry, 10=Optimal",
         )
         price_change = st.slider(
             "Market Price Change (%)",
-            -50,
-            20,
+            PRICE_CHANGE_RANGE[0],
+            PRICE_CHANGE_RANGE[1],
             -10,
             help="Estimated change in your crop's market price this season",
         )
         expenditure_ratio = st.slider(
             "Input Cost vs Normal",
-            0.5,
-            3.0,
+            EXPENDITURE_RATIO_RANGE[0],
+            EXPENDITURE_RATIO_RANGE[1],
             1.2,
             step=0.1,
             help="1.0 = normal costs, 2.0 = double the usual costs",
         )
 
     if st.button("Predict Distress Risk", type="primary", use_container_width=True):
-        with st.spinner("Fetching real-time weather data..."):
-            weather = get_weather_risk(district)
-            rd = weather["rainfall_deviation"]
-            ts = weather["temperature_stress"]
-
-        prediction, _probabilities, risk_score = predict_distress(
-            model, rd, ts, price_change, crop_stage, soil_moisture, expenditure_ratio
+        validation = validate_farmer_assessment_inputs(
+            farmer_name,
+            crop,
+            district,
+            language,
+            crop_stage,
+            soil_type,
+            soil_moisture,
+            price_change,
+            expenditure_ratio,
         )
+        if not validation.is_valid:
+            show_validation_errors(validation.errors)
+            return
 
-        st.session_state.prediction = prediction
-        st.session_state.risk_score = risk_score
-        st.session_state.farmer_name = farmer_name
-        st.session_state.crop = crop
-        st.session_state.district = district
+        cleaned = validation.cleaned_data
+        try:
+            with st.spinner("Fetching real-time weather data..."):
+                weather = get_weather_risk(cleaned["district"])
+                rd = weather["rainfall_deviation"]
+                ts = weather["temperature_stress"]
 
-        render_prediction_result(
-            model, farmer_name, prediction, risk_score, rd, ts, language
-        )
+            prediction_validation = validate_prediction_inputs(
+                rd,
+                ts,
+                cleaned["price_change"],
+                cleaned["crop_stage"],
+                cleaned["soil_moisture"],
+                cleaned["expenditure_ratio"],
+            )
+            if not prediction_validation.is_valid:
+                show_validation_errors(prediction_validation.errors)
+                return
+
+            prediction, _probabilities, risk_score = predict_distress(
+                model,
+                rd,
+                ts,
+                cleaned["price_change"],
+                cleaned["crop_stage"],
+                cleaned["soil_moisture"],
+                cleaned["expenditure_ratio"],
+            )
+
+            st.session_state.prediction = prediction
+            st.session_state.risk_score = risk_score
+            st.session_state.farmer_name = cleaned["farmer_name"]
+            st.session_state.crop = cleaned["crop"]
+            st.session_state.district = cleaned["district"]
+
+            render_prediction_result(
+                model,
+                cleaned["farmer_name"],
+                prediction,
+                risk_score,
+                rd,
+                ts,
+                cleaned["language"],
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            logger.warning("Prediction input handling failed: %s", exc)
+            st.error("Prediction could not be completed. Please review the farmer details and try again.")
+        except AttributeError as exc:
+            logger.exception("Loaded model does not provide the expected prediction API: %s", exc)
+            st.error("Prediction service is temporarily unavailable. Please try again later.")
+        except Exception as exc:
+            logger.exception("Unexpected error during farmer risk assessment: %s", exc)
+            st.error("Something went wrong while calculating the risk. Please try again.")
 
     render_sms_section()
 
@@ -141,8 +207,9 @@ def render_prediction_result(model, farmer_name, prediction, risk_score, rd, ts,
     st.divider()
     risk_class = f"risk-{prediction.lower()}"
     risk_emoji = {"High": "🔴", "Medium": "🟡", "Low": "🟢"}[prediction]
+    safe_farmer_name = escape(farmer_name)
     st.markdown(
-        f'<div class="{risk_class}">{risk_emoji} {farmer_name} - {prediction.upper()} DISTRESS RISK (Score: {risk_score}/100)</div>',
+        f'<div class="{risk_class}">{risk_emoji} {safe_farmer_name} - {prediction.upper()} DISTRESS RISK (Score: {risk_score}/100)</div>',
         unsafe_allow_html=True,
     )
 
@@ -196,27 +263,43 @@ def render_sms_section():
     st.divider()
     st.subheader("📱 Send Alert to Farmer")
 
-    phone_input = st.text_input("Enter farmer phone number", "+91XXXXXXXXXX")
+    phone_input = st.text_input("Enter farmer phone number", PHONE_PLACEHOLDER)
 
     if st.button("📲 Send SMS Alert", type="primary"):
-        if has_entered_phone_number(phone_input):
+        validation = validate_sms_inputs(
+            st.session_state.get("farmer_name"),
+            st.session_state.get("prediction"),
+            st.session_state.get("risk_score"),
+            phone_input,
+            st.session_state.get("crop"),
+            st.session_state.get("district"),
+        )
+        if not validation.is_valid:
+            show_validation_errors(validation.errors)
+            return
+
+        try:
             with st.spinner("Sending SMS..."):
                 success, msg = send_sms_alert(
                     st.session_state.farmer_name,
                     st.session_state.prediction,
                     st.session_state.risk_score,
-                    phone_input,
+                    validation.cleaned_data["phone_number"],
                     st.session_state.crop,
                     st.session_state.district,
                 )
 
             if success:
-                st.success(f"✅ SMS sent successfully to {phone_input}!")
+                st.success(f"✅ SMS sent successfully to {validation.cleaned_data['phone_number']}!")
                 st.balloons()
             else:
                 st.error(f"❌ Failed: {msg}")
-        else:
-            st.warning("Please enter a valid phone number")
+        except (KeyError, AttributeError) as exc:
+            logger.warning("SMS session state is incomplete: %s", exc)
+            st.error("Please run a farmer risk prediction before sending an SMS.")
+        except Exception as exc:
+            logger.exception("Unexpected error while sending SMS alert: %s", exc)
+            st.error("Something went wrong while sending the SMS. Please try again.")
 
 
 def render_district_dashboard_tab():
@@ -258,6 +341,11 @@ def render_market_trends_tab():
 
     days, crops_prices = get_dashboard_market_prices()
     selected_crop = st.selectbox("Select Crop", list(crops_prices.keys()))
+    validation = validate_market_crop(selected_crop, list(crops_prices.keys()))
+    if not validation.is_valid:
+        show_validation_errors(validation.errors)
+        return
+
     price_series = crops_prices[selected_crop]
 
     fig4 = go.Figure()
@@ -364,3 +452,8 @@ def render_model_performance_tab(model):
       Dashboard Visualization + SMS Alert
     """
     )
+
+
+def show_validation_errors(errors):
+    for error in errors:
+        st.warning(error)
