@@ -1,6 +1,11 @@
 # 🌾 AgriSOS
 ### Early Farmer Distress Prediction & Risk Advisory System
 
+🌐 **Live Demo:** https://agrisos.streamlit.app
+
+📂 **Repository:** https://github.com/TwinkleGhodki/AgriSOS
+
+
 ![Python](https://img.shields.io/badge/Python-3.13-blue?style=for-the-badge&logo=python)
 ![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-red?style=for-the-badge&logo=streamlit)
 ![Scikit-Learn](https://img.shields.io/badge/Scikit--Learn-ML-orange?style=for-the-badge&logo=scikitlearn)
