@@ -7,6 +7,7 @@ logs/
 
 # Python cache
 __pycache__/
+.pytest_cache/
 *.py[cod]
 
 # Virtual environments
@@ -16,3 +17,6 @@ venv/
 # IDE
 .vscode/
 .idea/
+
+# Database
+history.db
