@@ -237,7 +237,7 @@ The project includes tests for
 
 ---
 
-# SMS Alert Configuration
+# 📱 SMS Alert Configuration
 
 Create a `.env` file.
 
@@ -255,7 +255,7 @@ https://www.twilio.com
 
 ---
 
-# Machine Learning Pipeline
+# 🧠 Machine Learning Pipeline
 
 1. Data Generation
 2. Data Cleaning
@@ -336,7 +336,7 @@ Generate a downloadable assessment report containing
 
 ---
 
-# Project Highlights
+# 📊 Project Highlights
 
 - Random Forest based prediction model
 - Real-time weather intelligence
