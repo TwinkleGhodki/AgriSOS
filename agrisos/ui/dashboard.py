@@ -5,6 +5,13 @@ import plotly.figure_factory as ff
 import plotly.graph_objects as go
 import streamlit as st
 
+from agrisos.services.history_service import (
+    get_history,
+    save_prediction_history,
+    get_history_statistics,
+    clear_history,
+)
+from agrisos.services.history_service import save_prediction_history
 from agrisos.config.logging_config import get_logger
 from agrisos.data.district_repository import get_district_risk_data
 from agrisos.data.market_repository import get_dashboard_market_prices
@@ -29,6 +36,7 @@ from agrisos.utils.validation import (
     validate_prediction_inputs,
     validate_sms_inputs,
 )
+from agrisos.services.pdf_service import generate_prediction_report
 
 logger = get_logger(__name__)
 
@@ -37,12 +45,13 @@ def render_app(model):
     st.set_page_config(page_title="AgriSOS", page_icon="🌾", layout="wide")
     render_header()
 
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(
         [
             "🧑‍🌾 Farmer Risk Assessment",
             "📊 District Dashboard",
             "📈 Market Trends",
             "🧠 Model Performance",
+            "📜 Prediction History",
         ]
     )
 
@@ -54,6 +63,86 @@ def render_app(model):
         render_market_trends_tab()
     with tab4:
         render_model_performance_tab(model)
+    with tab5:
+        st.header("Prediction History")
+
+        stats = get_history_statistics()
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            st.metric(
+               "📋 Total Predictions",
+                stats["total"]
+            )
+
+        with col2:
+            st.metric(
+               "🚨 High Risk Cases",
+               stats["high_risk"]
+            )
+
+        with col3:
+           st.metric(
+              "📊 Average Risk Score",
+               f'{stats["average_score"]:.0f}%'
+            )
+
+        st.divider()
+
+        risk_filter = st.selectbox(
+            "Filter by Risk Level",
+            ["All", "High", "Medium", "Low"],
+        )
+
+        history = get_history()
+
+        if risk_filter != "All":
+            history = history[
+               history["Risk Level"] == risk_filter
+            ]
+        
+        csv = history.to_csv(index=False).encode("utf-8")
+
+        st.download_button(
+            label="📥 Download Prediction History",
+            data=csv,
+            file_name="prediction_history.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+        st.divider()
+        
+        if history.empty:
+           st.info("No prediction history available yet.")
+        else:
+           st.dataframe(
+              history,
+              use_container_width=True,
+              hide_index=True,
+            )
+           
+        st.divider()
+
+        st.checkbox(
+            "I understand this will permanently delete all prediction history.",
+            key="confirm_delete_history",
+        )
+
+        if st.button(
+            "🗑️ Clear Prediction History",
+            type="secondary",
+            use_container_width=True,
+        ):
+           if st.session_state.confirm_delete_history:
+              clear_history()
+              st.success("Prediction history has been cleared.")
+              st.rerun()
+           else:
+              st.warning("Please confirm before deleting the prediction history.")
+
+        st.divider()
 
 
 def render_header():
@@ -175,6 +264,25 @@ def render_farmer_assessment_tab(model):
             st.session_state.crop = cleaned["crop"]
             st.session_state.district = cleaned["district"]
 
+            # Save prediction to history database
+
+            weather_summary = (
+               f"Rainfall Deviation: {rd:.1f}%, "
+               f"Temperature Stress: {ts:.1f}°C"
+            )
+
+            recommendation = "; ".join(RECOMMENDATIONS[prediction])
+
+            save_prediction_history(
+               farmer_name=cleaned["farmer_name"],
+               crop=cleaned["crop"],
+               district=cleaned["district"],
+               risk_level=prediction,
+               risk_score=risk_score,
+               weather=weather_summary,
+               recommendation=recommendation,
+            )    
+
             render_prediction_result(
                 model,
                 cleaned["farmer_name"],
@@ -241,6 +349,25 @@ def render_prediction_result(model, farmer_name, prediction, risk_score, rd, ts,
     translated_recs = translate_recommendations(RECOMMENDATIONS[prediction], language)
     for rec in translated_recs:
         st.write(rec)
+
+    pdf = generate_prediction_report(
+        farmer_name=farmer_name,
+        crop=st.session_state.crop,
+        district=st.session_state.district,
+        risk_level=prediction,
+        risk_score=risk_score,
+        rainfall_deviation=rd,
+        temperature_stress=ts,
+        recommendations=translated_recs,
+    )
+
+    st.download_button(
+        label="📄 Download Assessment Report (PDF)",
+        data=pdf,
+        file_name=f"{farmer_name}_AgriSOS_Report.pdf",
+        mime="application/pdf",
+        use_container_width=True,
+    )
 
     importances = model.feature_importances_
     fig2 = px.bar(

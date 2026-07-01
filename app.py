@@ -3,6 +3,8 @@ import streamlit as st
 from agrisos.config.logging_config import get_logger
 from agrisos.ml.predictor import load_model
 from agrisos.ui.dashboard import render_app
+from agrisos.data.history_repository import initialize_database
+initialize_database()
 
 logger = get_logger(__name__)
 
